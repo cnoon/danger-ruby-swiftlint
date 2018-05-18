@@ -87,8 +87,40 @@ module Danger
       }
       log "linting with options: #{options}"
 
-      # Lint each file and collect the results
-      issues = run_swiftlint(files, options, additional_swiftlint_args)
+      # Lint each file, collect the results, and report the issues
+      issues = run_swiftlint_on_files(files, options, additional_swiftlint_args)
+      report_issues issues, inline_mode, fail_on_error
+    end
+
+    # Runs `swiftlint lint` from `directory` if specified, otherwise from `PWD`.
+    # Will fail if `swiftlint` cannot be installed correctly.
+    # Generates a `markdown` list of warnings for the prose in a corpus of
+    # .markdown and .md files.
+    def lint_all(inline_mode: false, fail_on_error: false, additional_swiftlint_args: '')
+      # Fails if swiftlint isn't installed
+      raise 'swiftlint is not installed' unless swiftlint.installed?
+      log "Using config file: #{config_file}" unless config_file.nil?
+
+      dir_selected = directory ? File.expand_path(directory) : Dir.pwd
+      log "Swiftlint will be run from #{dir_selected}"
+
+      # Prepare swiftlint options
+      options = {
+          # Make sure we don't fail when config path has spaces
+          config: config_file ? Shellwords.escape(config_file) : nil,
+          reporter: 'json',
+          quiet: true,
+          pwd: dir_selected
+      }
+      log "linting with options: #{options}"
+
+      # Run lint, collect the results, and report out the issues
+      issues = run_swiftlint(options, additional_swiftlint_args)
+      report_issues issues, inline_mode, fail_on_error
+    end
+
+    # Reports the issues as inline comments or markdown
+    def report_issues(issues, inline_mode, fail_on_error)
       other_issues_count = 0
       unless @max_num_violations.nil?
         other_issues_count = issues.count - @max_num_violations if issues.count > @max_num_violations
@@ -107,6 +139,9 @@ module Danger
         warn other_issues_message(other_issues_count) if other_issues_count > 0
       elsif warnings.count > 0 || errors.count > 0
         # Report if any warning or error
+        warn warnings_message(warnings.count) unless warnings.empty?
+        warn errors_message(errors.count) unless errors.empty?
+
         message = +"### SwiftLint found issues\n\n"
         message << markdown_issues(warnings, 'Warnings') unless warnings.empty?
         message << markdown_issues(errors, 'Errors') unless errors.empty?
@@ -123,13 +158,21 @@ module Danger
     # Run swiftlint on each file and aggregate collect the issues
     #
     # @return [Array] swiftlint issues
-    def run_swiftlint(files, options, additional_swiftlint_args)
+    def run_swiftlint_on_files(files, options, additional_swiftlint_args)
       files
         .map { |file| options.merge(path: file) }
         .map { |full_options| swiftlint.lint(full_options, additional_swiftlint_args) }
         .reject { |s| s == '' }
         .map { |s| JSON.parse(s).flatten }
         .flatten
+    end
+
+    # Run swiftlint and collect the issues
+    #
+    # @return [Array] swiftlint issues
+    def run_swiftlint(options, additional_swiftlint_args)
+      json = swiftlint.lint(options, additional_swiftlint_args)
+      JSON.parse(json).flatten unless json == ""
     end
 
     # Find swift files from the files glob
@@ -240,9 +283,19 @@ module Danger
       end
     end
 
+    def warnings_message(warnings_count)
+      warnings = warnings_count == 1 ? 'warning' : 'warnings'
+      "SwiftLint found #{warnings_count} #{warnings} in this PR."
+    end
+
+    def errors_message(errors_count)
+      errors = errors_count == 1 ? 'error' : 'errors'
+      "SwiftLint found #{errors_count} #{errors} in this PR."
+    end
+
     def other_issues_message(issues_count)
       violations = issues_count == 1 ? 'violation' : 'violations'
-      "SwiftLint also found #{issues_count} more #{violations} with this PR."
+      "SwiftLint also found #{issues_count} more #{violations} in this PR."
     end
 
     # Make SwiftLint object for binary_path
