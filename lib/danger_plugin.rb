@@ -142,7 +142,7 @@ module Danger
         warn warnings_message(warnings.count) unless warnings.empty?
         warn errors_message(errors.count) unless errors.empty?
 
-        message = +"### SwiftLint found issues\n\n"
+        message = +"## SwiftLint\n\n"
         message << markdown_issues(warnings, 'Warnings') unless warnings.empty?
         message << markdown_issues(errors, 'Errors') unless errors.empty?
         message << "\n#{other_issues_message(other_issues_count)}" if other_issues_count > 0
@@ -152,6 +152,10 @@ module Danger
         if fail_on_error && errors.count > 0
           fail 'Failed due to SwiftLint errors'
         end
+      else
+        message = +"## SwiftLint\n\n"
+        message << "✅ *No warnings or errors found*\n\n"
+        markdown message
       end
     end
 
@@ -256,17 +260,18 @@ module Danger
     #
     # @return  [String]
     def markdown_issues(results, heading)
-      message = +"#### #{heading}\n\n"
+      message = +"### #{heading}\n\n"
 
-      message << "File | Line | Reason |\n"
-      message << "| --- | ----- | ----- |\n"
+      message << "File | Line | Rule | Reason |\n"
+      message << "| --- | --- | --- | --- |\n"
 
       results.each do |r|
         filename = r['file'].split('/').last
         line = r['line']
+        rule_id = r['rule_id']
         reason = r['reason']
 
-        message << "#{filename} | #{line} | #{reason} \n"
+        message << "#{filename} | #{line} | #{rule_id} | #{reason} \n"
       end
 
       message
